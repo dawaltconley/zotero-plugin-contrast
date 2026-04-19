@@ -1,13 +1,13 @@
 {
-  "name": "zotero-plugin-template",
+  "name": "zotero-plugin-contrast",
   "version": "0.1.0",
   "description": "Plugin description",
   "config": {
-    "addonName": "Plugin Name",
-    "addonID": "plugin-name@dylan.ac",
-    "addonRef": "plugin-name",
-    "addonInstance": "PluginName",
-    "prefsPrefix": "extensions.zotero.plugin-name"
+    "addonName": "Zotero Contrast",
+    "addonID": "zotero-contrast@dylan.ac",
+    "addonRef": "zotero-contrast",
+    "addonInstance": "ZoteroContrast",
+    "prefsPrefix": "extensions.zotero.zotero-contrast"
   },
   "scripts": {
     "dev": "zotero-plugin serve",
