@@ -67,7 +67,10 @@ export class Plugin {
   async attachStylesToReader(reader: _ZoteroTypes.ReaderInstance) {
     await reader._waitForReader();
     await reader._initPromise;
-    const doc = reader?._iframeWindow?.document;
+    // const doc = reader?._iframeWindow?.document;
+    const doc: Document | undefined =
+      // @ts-expect-error no types for _internalReader._primaryView
+      reader?._internalReader?._primaryView?._iframeWindow?.document;
     if (!doc || !doc.documentElement) {
       this.log(`couldn't attach styles; tab ${reader.tabID} not ready`);
       return;

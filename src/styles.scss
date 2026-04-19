@@ -1,3 +1,4 @@
-.foobar {
-  color: red;
+.canvasWrapper canvas {
+  --pdf-contrast: 115%;
+  filter: contrast(var(--pdf-contrast)) !important;
 }
