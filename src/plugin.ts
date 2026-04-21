@@ -1,5 +1,5 @@
 import pluginCss from './styles.scss';
-import { isPDFReader } from './utils';
+import { isPDFReader, waitForReader, waitForInternalReader } from './utils';
 import { config, version as packageVersion } from '../package.json';
 
 export interface PluginOptions {
@@ -72,12 +72,12 @@ export class Plugin {
   }
 
   #registerToolbarListener() {
-    this.#toolbarEventHandler = ({ reader, doc }) => {
+    this.#toolbarEventHandler = async ({ reader, doc }) => {
       this.log(
         `renderToolbar fired: tabID=${reader.tabID} doc.URL=${doc.URL} body=${!!doc.body}`,
       );
       if (!isPDFReader(reader)) return;
-      this.#observeAppearancePanel(reader);
+      await this.attachStylesToReader(reader);
     };
     Zotero.Reader.registerEventListener(
       'renderToolbar',
@@ -119,31 +119,37 @@ export class Plugin {
   }
 
   async attachStylesToReader(reader: _ZoteroTypes.ReaderInstance<'pdf'>) {
-    await reader._waitForReader();
-    await reader._initPromise;
-    const pdfDoc: Document | undefined =
-      reader?._internalReader?._primaryView?._iframeWindow?.document;
-    if (!pdfDoc || !pdfDoc.documentElement) {
-      this.log(`couldn't attach styles; tab ${reader.tabID} not ready`);
-      return;
-    }
+    // wait for necessary DOM to initialize
+    await waitForReader(reader);
+    await waitForInternalReader(reader);
+
+    // set current contrast for the tab, or default contrast
     const contrast =
       this.#contrastValues.get(reader.tabID) ?? this.#defaultContrast;
-    this.#applyContrast(pdfDoc, contrast);
+    this.applyContrast(reader, contrast);
 
-    // Fallback for tabs already open when the plugin loads — renderToolbar won't
-    // fire for them, so set up the appearance panel observer directly.
-    const outerDoc = reader?._iframeWindow?.document;
-    this.log(
-      `attachStylesToReader fallback: tabID=${reader.tabID} outerDoc=${!!outerDoc} outerDoc.URL=${outerDoc?.URL}`,
-    );
-    if (outerDoc && reader._iframeWindow) {
-      this.#observeAppearancePanel(reader);
-    }
+    // observe the toolbar for the appearance panel opening
+    this.addSliders(reader);
+
+    this.log(`attachStylesToReader fallback: tabID=${reader.tabID}`);
   }
 
-  #applyContrast(pdfDoc: Document, contrast: number) {
-    const root = pdfDoc.documentElement as HTMLElement;
+  applyContrast(
+    reader: _ZoteroTypes.ReaderInstance<'pdf'>,
+    contrast: number,
+  ): void {
+    const pdfDoc: Document | undefined =
+      reader._internalReader._primaryView._iframeWindow?.document;
+    if (!pdfDoc || !pdfDoc.documentElement) {
+      this.log(
+        `applyContrast: couldn't apply contrast; tab ${reader.tabID} not ready`,
+      );
+      return;
+    }
+
+    const root = (pdfDoc.documentElement as HTMLElement | null) || pdfDoc.body;
+    if (!root) return;
+
     if (contrast === 100) {
       pdfDoc.getElementById(this.stylesId)?.remove();
       root.style.removeProperty('--pdf-contrast');
@@ -158,7 +164,8 @@ export class Plugin {
     }
   }
 
-  #observeAppearancePanel(reader: _ZoteroTypes.ReaderInstance<'pdf'>) {
+  /** Add sliders to the appearance panel when it is opened. */
+  addSliders(reader: _ZoteroTypes.ReaderInstance<'pdf'>) {
     const tabID = reader.tabID;
     this.#appearanceObservers.get(tabID)?.disconnect();
 
@@ -177,18 +184,9 @@ export class Plugin {
       return;
     }
 
-    const pdfDoc: Document | undefined =
-      reader?._internalReader?._primaryView?._iframeWindow?.document;
-    if (!pdfDoc) {
-      this.log(
-        `observeAppearancePanel: no PDF document for tabID=${tabID}, URL=${doc.URL}`,
-      );
-      return;
-    }
-
     const slider = this.createContrastSlider(reader, (contrast) => {
       this.#contrastValues.set(tabID, contrast);
-      this.#applyContrast(pdfDoc, contrast);
+      this.applyContrast(reader, contrast);
       this.#defaultContrast = contrast;
       Zotero.Prefs.set(CONTRAST_PREFS_KEY, contrast);
     });
