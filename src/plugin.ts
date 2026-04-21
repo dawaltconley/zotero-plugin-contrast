@@ -1,4 +1,5 @@
 import pluginCss from './styles.scss';
+import { isPDFReader } from './utils';
 import { config, version as packageVersion } from '../package.json';
 
 export interface PluginOptions {
@@ -75,7 +76,7 @@ export class Plugin {
       this.log(
         `renderToolbar fired: tabID=${reader.tabID} doc.URL=${doc.URL} body=${!!doc.body}`,
       );
-      if (!reader._iframeWindow) return;
+      if (!isPDFReader(reader)) return;
       this.#observeAppearancePanel(reader);
     };
     Zotero.Reader.registerEventListener(
@@ -117,11 +118,10 @@ export class Plugin {
     });
   }
 
-  async attachStylesToReader(reader: _ZoteroTypes.ReaderInstance) {
+  async attachStylesToReader(reader: _ZoteroTypes.ReaderInstance<'pdf'>) {
     await reader._waitForReader();
     await reader._initPromise;
     const pdfDoc: Document | undefined =
-      // @ts-expect-error no types for _internalReader._primaryView
       reader?._internalReader?._primaryView?._iframeWindow?.document;
     if (!pdfDoc || !pdfDoc.documentElement) {
       this.log(`couldn't attach styles; tab ${reader.tabID} not ready`);
@@ -158,7 +158,7 @@ export class Plugin {
     }
   }
 
-  #observeAppearancePanel(reader: _ZoteroTypes.ReaderInstance) {
+  #observeAppearancePanel(reader: _ZoteroTypes.ReaderInstance<'pdf'>) {
     const tabID = reader.tabID;
     this.#appearanceObservers.get(tabID)?.disconnect();
 
@@ -178,7 +178,6 @@ export class Plugin {
     }
 
     const pdfDoc: Document | undefined =
-      // @ts-expect-error no types for _internalReader._primaryView
       reader?._internalReader?._primaryView?._iframeWindow?.document;
     if (!pdfDoc) {
       this.log(
@@ -302,7 +301,9 @@ export class Plugin {
     this.log(
       `found ${readers.length} reader tags: ${readers.map((r) => r.tabID).join(', ')}`,
     );
-    await Promise.all(readers.map((r) => this.attachStylesToReader(r)));
+    await Promise.all(
+      readers.map((r) => isPDFReader(r) && this.attachStylesToReader(r)),
+    );
     this.log('done adding styles to existing tabs');
   }
 
@@ -321,7 +322,9 @@ export class Plugin {
             await Promise.all(
               tabIDs.map(async (id) => {
                 const reader = Zotero.Reader.getByTabID(id.toString());
-                await this.attachStylesToReader(reader);
+                if (isPDFReader(reader)) {
+                  await this.attachStylesToReader(reader);
+                }
               }),
             );
           }
