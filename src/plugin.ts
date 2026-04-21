@@ -9,7 +9,6 @@ export interface PluginOptions {
   stylesId?: string;
 }
 
-const CONTRAST_PREFS_KEY = `${config.prefsPrefix}.contrast`;
 const CONTRAST_MIN = 80;
 const CONTRAST_MAX = 200;
 const CONTRAST_STEP = 20;
@@ -32,16 +31,51 @@ export class Plugin {
     return this.#isActive;
   }
 
-  #contrastValues = new Map<string, number>();
-  #appearanceObservers = new Map<string, MutationObserver>();
+  #contrastValues: Map<string, number> = new Map();
   #defaultContrast: number = 100;
+  #appearanceObservers = new Map<string, MutationObserver>();
 
   getContrast(reader: _ZoteroTypes.ReaderInstance): number {
     return this.#contrastValues.get(reader._item.key) ?? this.#defaultContrast;
   }
 
   setContrast(reader: _ZoteroTypes.ReaderInstance, contrast: number): void {
-    this.#contrastValues.set(reader._item.key, contrast);
+    const key = reader._item.key;
+    if (contrast === this.#defaultContrast) {
+      this.#contrastValues.delete(key);
+    } else {
+      this.#contrastValues.set(key, contrast);
+    }
+  }
+
+  getDefaultContrast(): number | null {
+    const contrast = Number(Zotero.Prefs.get(PREFS.defaultContrast, true));
+    return Number.isNaN(contrast) ? null : contrast;
+  }
+
+  setDefaultContrast(contrast: number): void {
+    Zotero.Prefs.set(PREFS.defaultContrast, contrast, true);
+    this.#defaultContrast = contrast;
+  }
+
+  getSavedContrast(): Map<string, number> | null {
+    try {
+      const savedContrastString = Zotero.Prefs.get(PREFS.contrastValues, true);
+      if (typeof savedContrastString === 'string') {
+        const savedContrast = JSON.parse(savedContrastString) as unknown;
+        if (savedContrast && typeof savedContrast === 'object') {
+          return new Map(Object.entries(savedContrast));
+        }
+      }
+    } catch (e) {
+      this.log(`error retrieving saved contrast settings: ${e}`);
+    }
+    return null;
+  }
+
+  setSavedContrast(): void {
+    const contrast = Object.fromEntries(this.#contrastValues);
+    Zotero.Prefs.set(PREFS.contrastValues, JSON.stringify(contrast), true);
   }
 
   constructor({
@@ -59,16 +93,15 @@ export class Plugin {
   #toolbarEventHandler?: _ZoteroTypes.Reader.EventHandler<'renderToolbar'>;
 
   async startup(): Promise<void> {
-    const stored = Zotero.Prefs.get(CONTRAST_PREFS_KEY);
-    if (typeof stored === 'number') {
-      this.#defaultContrast = stored;
-    }
+    this.#defaultContrast = this.getDefaultContrast() ?? 100;
+    this.#contrastValues = this.getSavedContrast() ?? new Map();
     this.addToAllWindows();
     this.#registerToolbarListener();
     await this.styleExistingTabs();
   }
 
   shutdown(): void {
+    this.setSavedContrast();
     this.removeFromAllWindows();
     this.#unregisterToolbarListener();
     for (const observer of this.#appearanceObservers.values()) {
@@ -191,7 +224,6 @@ export class Plugin {
     const slider = this.createContrastSlider(reader, (contrast) => {
       this.setContrast(reader, contrast);
       this.applyContrast(reader, contrast);
-      Zotero.Prefs.set(CONTRAST_PREFS_KEY, contrast);
     });
     if (!slider) {
       this.log(
@@ -354,7 +386,15 @@ export class Plugin {
     this.#addedElementIDs.push(elem.id);
   }
 
-  log(msg: string) {
-    Zotero.log(`[${config.addonName}] ${msg}`);
+  log(
+    msg: string,
+    type: 'error' | 'warning' | 'exception' | 'strict' = 'warning',
+  ) {
+    Zotero.log(`[${config.addonName}] ${msg}`, type);
   }
 }
+
+const PREFS = {
+  defaultContrast: `${config.prefsPrefix}.default-contrast`,
+  contrastValues: `${config.prefsPrefix}.contrast-values`,
+} satisfies Record<string, string>;
