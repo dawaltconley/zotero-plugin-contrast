@@ -25,6 +25,7 @@ The plugin has two layers that connect through the build pipeline:
 **`addon/bootstrap.js`** — Firefox/XUL extension entry point. Runs in Zotero's privileged scope. Handles Firefox lifecycle hooks (`startup`, `shutdown`, `onMainWindowLoad`, `onMainWindowUnload`), registers the chrome manifest, loads the compiled TypeScript bundle via `Services.scriptloader`, and manages `Plugin` class instantiation per window.
 
 **`src/plugin.ts`** — Core plugin logic compiled by esbuild into the bundle loaded above. The `Plugin` class:
+
 - Uses an observer (`Zotero.Notifier`) to watch for tab add/load events and call `attachStylesToReader()` on new PDF readers
 - Injects `styles.scss` (compiled to CSS at build time) as a `<style>` element into PDF reader iframes
 - Adds a checkbox menu item to the View menu to toggle the plugin active state via `Plugin.#isActive`
