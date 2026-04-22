@@ -22,6 +22,12 @@ async function startup({ id, version, rootURI }) {
     ['content', '__addonRef__', rootURI + 'content/'],
   ]);
 
+  Zotero.PreferencePanes.register({
+    pluginID: '__addonID__',
+    src: rootURI + 'preferences.xhtml',
+    scripts: [rootURI + 'preferences.js'],
+  });
+
   Services.scriptloader.loadSubScript(
     `${rootURI}/content/scripts/__addonRef__.js`,
   );

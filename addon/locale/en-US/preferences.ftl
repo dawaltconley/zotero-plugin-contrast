@@ -1,0 +1,1 @@
+default-contrast = Default contrast (%)
