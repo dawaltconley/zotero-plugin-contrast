@@ -8,7 +8,9 @@ declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
       "default-contrast": number;
+      "default-brightness": number;
       "contrast-values": string;
+      "brightness-values": string;
     };
   }
 }

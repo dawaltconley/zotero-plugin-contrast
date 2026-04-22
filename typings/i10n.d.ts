@@ -3,4 +3,5 @@
 /* eslint-disable */
 // @ts-nocheck
 export type FluentMessageId =
+  | 'default-brightness'
   | 'default-contrast';

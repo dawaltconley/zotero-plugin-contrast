@@ -5,6 +5,21 @@
   <groupbox>
     <hbox align="center">
       <html:label
+        for="__addonRef___default-brightness"
+        data-l10n-id="default-brightness"
+      ></html:label>
+      <html:input
+        id="__addonRef___default-brightness"
+        type="number"
+        min="50"
+        max="150"
+        step="5"
+        preference="__prefsPrefix__.default-brightness"
+        style="width: 5em; margin-inline-start: 8px"
+      />
+    </hbox>
+    <hbox align="center">
+      <html:label
         for="__addonRef___default-contrast"
         data-l10n-id="default-contrast"
       ></html:label>
@@ -12,8 +27,8 @@
         id="__addonRef___default-contrast"
         type="number"
         min="80"
-        max="200"
-        step="20"
+        max="360"
+        step="10"
         preference="__prefsPrefix__.default-contrast"
         style="width: 5em; margin-inline-start: 8px"
       />

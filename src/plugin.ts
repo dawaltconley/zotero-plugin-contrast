@@ -1,6 +1,32 @@
 import pluginCss from './styles.scss';
+import { createSlider, createSliderGroup, type SliderConfig } from './slider';
 import { isPDFReader, waitForReader, waitForInternalReader } from './utils';
 import { config, version as packageVersion } from '../package.json';
+
+const CONTRAST_CONFIG: SliderConfig = {
+  min: 80,
+  max: 360,
+  step: 10,
+  label: 'Contrast',
+  dataAttr: 'contrast-slider',
+  inputId: 'contrast-slider',
+};
+
+const BRIGHTNESS_CONFIG: SliderConfig = {
+  min: 50,
+  max: 150,
+  step: 5,
+  label: 'Brightness',
+  dataAttr: 'brightness-slider',
+  inputId: 'brightness-slider',
+};
+
+const PREFS = {
+  defaultContrast: `${config.prefsPrefix}.default-contrast`,
+  defaultBrightness: `${config.prefsPrefix}.default-brightness`,
+  contrastValues: `${config.prefsPrefix}.contrast-values`,
+  brightnessValues: `${config.prefsPrefix}.brightness-values`,
+} satisfies Record<string, string>;
 
 export interface PluginOptions {
   id: string;
@@ -8,17 +34,6 @@ export interface PluginOptions {
   rootURI: string;
   stylesId?: string;
 }
-
-const CONTRAST_MIN = 80;
-const CONTRAST_MAX = 200;
-const CONTRAST_STEP = 20;
-const CONTRAST_TICKS = Array.from(
-  { length: (CONTRAST_MAX - CONTRAST_MIN) / CONTRAST_STEP + 1 },
-  (_, i) => {
-    const pct = (i / ((CONTRAST_MAX - CONTRAST_MIN) / CONTRAST_STEP)) * 100;
-    return `${pct.toFixed(2)}%`;
-  },
-);
 
 export class Plugin {
   readonly id: string;
@@ -32,7 +47,9 @@ export class Plugin {
   }
 
   #contrastValues: Map<string, number> = new Map();
+  #brightnessValues: Map<string, number> = new Map();
   #defaultContrast: number = 100;
+  #defaultBrightness: number = 100;
   #appearanceObservers = new Map<string, MutationObserver>();
 
   getContrast(reader: _ZoteroTypes.ReaderInstance): number {
@@ -48,6 +65,21 @@ export class Plugin {
     }
   }
 
+  getBrightness(reader: _ZoteroTypes.ReaderInstance): number {
+    return (
+      this.#brightnessValues.get(reader._item.key) ?? this.#defaultBrightness
+    );
+  }
+
+  setBrightness(reader: _ZoteroTypes.ReaderInstance, brightness: number): void {
+    const key = reader._item.key;
+    if (brightness === this.#defaultBrightness) {
+      this.#brightnessValues.delete(key);
+    } else {
+      this.#brightnessValues.set(key, brightness);
+    }
+  }
+
   getDefaultContrast(): number | null {
     const contrast = Number(Zotero.Prefs.get(PREFS.defaultContrast, true));
     return Number.isNaN(contrast) ? null : contrast;
@@ -58,24 +90,37 @@ export class Plugin {
     this.#defaultContrast = contrast;
   }
 
-  getSavedContrast(): Map<string, number> | null {
+  getDefaultBrightness(): number | null {
+    const brightness = Number(Zotero.Prefs.get(PREFS.defaultBrightness, true));
+    return Number.isNaN(brightness) ? null : brightness;
+  }
+
+  setDefaultBrightness(brightness: number): void {
+    Zotero.Prefs.set(PREFS.defaultBrightness, brightness, true);
+    this.#defaultBrightness = brightness;
+  }
+
+  getSavedValues(prefsKey: string): Map<string, number> | null {
     try {
-      const savedContrastString = Zotero.Prefs.get(PREFS.contrastValues, true);
-      if (typeof savedContrastString === 'string') {
-        const savedContrast = JSON.parse(savedContrastString) as unknown;
-        if (savedContrast && typeof savedContrast === 'object') {
-          return new Map(Object.entries(savedContrast));
+      const raw = Zotero.Prefs.get(prefsKey, true);
+      if (typeof raw === 'string') {
+        const parsed = JSON.parse(raw) as unknown;
+        if (parsed && typeof parsed === 'object') {
+          return new Map(Object.entries(parsed as Record<string, number>));
         }
       }
     } catch (e) {
-      this.log(`error retrieving saved contrast settings: ${e}`);
+      this.log(`error retrieving saved pref ${prefsKey}: ${e}`);
     }
     return null;
   }
 
-  setSavedContrast(): void {
-    const contrast = Object.fromEntries(this.#contrastValues);
-    Zotero.Prefs.set(PREFS.contrastValues, JSON.stringify(contrast), true);
+  setSavedValues(prefsKey: string, values: Map<string, number>): void {
+    Zotero.Prefs.set(
+      prefsKey,
+      JSON.stringify(Object.fromEntries(values)),
+      true,
+    );
   }
 
   constructor({
@@ -94,13 +139,18 @@ export class Plugin {
 
   async startup(): Promise<void> {
     this.#defaultContrast = this.getDefaultContrast() ?? 100;
-    this.#contrastValues = this.getSavedContrast() ?? new Map();
+    this.#defaultBrightness = this.getDefaultBrightness() ?? 100;
+    this.#contrastValues =
+      this.getSavedValues(PREFS.contrastValues) ?? new Map();
+    this.#brightnessValues =
+      this.getSavedValues(PREFS.brightnessValues) ?? new Map();
     this.#registerToolbarListener();
     await this.styleExistingTabs();
   }
 
   shutdown(): void {
-    this.setSavedContrast();
+    this.setSavedValues(PREFS.contrastValues, this.#contrastValues);
+    this.setSavedValues(PREFS.brightnessValues, this.#brightnessValues);
     this.#unregisterToolbarListener();
     for (const observer of this.#appearanceObservers.values()) {
       observer.disconnect();
@@ -134,46 +184,50 @@ export class Plugin {
   }
 
   async attachStylesToReader(reader: _ZoteroTypes.ReaderInstance<'pdf'>) {
-    // wait for necessary DOM to initialize
     await waitForReader(reader);
     await waitForInternalReader(reader);
 
-    // set current contrast for the tab, or default contrast
-    this.applyContrast(reader);
-
-    // observe the toolbar for the appearance panel opening
+    this.applyFilters(reader);
     this.addSliders(reader);
 
-    this.log(`attachStylesToReader fallback: tabID=${reader.tabID}`);
+    this.log(`attachStylesToReader: tabID=${reader.tabID}`);
   }
 
-  applyContrast(
-    reader: _ZoteroTypes.ReaderInstance<'pdf'>,
-    contrast = this.getContrast(reader),
-  ): void {
+  applyFilters(reader: _ZoteroTypes.ReaderInstance<'pdf'>): void {
+    const contrast = this.getContrast(reader);
+    const brightness = this.getBrightness(reader);
+
     const pdfDoc: Document | undefined =
       reader._internalReader._primaryView._iframeWindow?.document;
     if (!pdfDoc || !pdfDoc.documentElement) {
-      this.log(
-        `applyContrast: couldn't apply contrast; tab ${reader.tabID} not ready`,
-      );
+      this.log(`applyFilters: tab ${reader.tabID} not ready`);
       return;
     }
 
     const root = (pdfDoc.documentElement as HTMLElement | null) || pdfDoc.body;
     if (!root) return;
 
-    if (contrast === 100) {
+    if (contrast === 100 && brightness === 100) {
       pdfDoc.getElementById(this.stylesId)?.remove();
       root.style.removeProperty('--pdf-contrast');
+      root.style.removeProperty('--pdf-brightness');
     } else {
       if (!pdfDoc.getElementById(this.stylesId)) {
         const styles = pdfDoc.createElement('style');
         styles.id = this.stylesId;
         styles.innerText = pluginCss;
-        pdfDoc.documentElement?.appendChild(styles);
+        pdfDoc.documentElement.appendChild(styles);
       }
-      root.style.setProperty('--pdf-contrast', `${contrast}%`);
+      if (contrast !== 100) {
+        root.style.setProperty('--pdf-contrast', `${contrast}%`);
+      } else {
+        root.style.removeProperty('--pdf-contrast');
+      }
+      if (brightness !== 100) {
+        root.style.setProperty('--pdf-brightness', `${brightness}%`);
+      } else {
+        root.style.removeProperty('--pdf-brightness');
+      }
     }
   }
 
@@ -185,32 +239,40 @@ export class Plugin {
     const doc = reader._iframeWindow?.document;
     const iframeWindow = doc?.defaultView;
     if (!doc || !iframeWindow) {
-      this.log(`observeAppearancePanel: no document for tabID=${tabID}`);
+      this.log(`addSliders: no document for tabID=${tabID}`);
       return;
     }
 
     const observeRoot = doc.getElementById('reader-ui');
     if (!observeRoot) {
-      this.log(
-        `observeAppearancePanel: no body or documentElement for tabID=${tabID}, URL=${doc.URL}`,
-      );
+      this.log(`addSliders: no reader-ui for tabID=${tabID}, URL=${doc.URL}`);
       return;
     }
 
-    const slider = this.createContrastSlider(reader, (contrast) => {
-      this.setContrast(reader, contrast);
-      this.applyContrast(reader, contrast);
-    });
-    if (!slider) {
-      this.log(
-        `observeAppearancePanel: couldn't create contrast slider; tabID=${tabID}, URL=${doc.URL}`,
-      );
-      return;
-    }
-
-    this.log(
-      `observeAppearancePanel: setting up observer on tabID=${tabID} root=${observeRoot.tagName} URL=${doc.URL}`,
+    const brightnessSlider = createSlider(
+      doc,
+      this.getBrightness(reader),
+      (brightness) => {
+        this.setBrightness(reader, brightness);
+        this.applyFilters(reader);
+      },
+      BRIGHTNESS_CONFIG,
     );
+
+    const contrastSlider = createSlider(
+      doc,
+      this.getContrast(reader),
+      (contrast) => {
+        this.setContrast(reader, contrast);
+        this.applyFilters(reader);
+      },
+      CONTRAST_CONFIG,
+    );
+
+    const groupDataAttr = 'pdf-sliders';
+    const group = createSliderGroup(doc, groupDataAttr);
+    group.appendChild(brightnessSlider);
+    group.appendChild(contrastSlider);
 
     const observer = new iframeWindow.MutationObserver(
       (mutations: MutationRecord[]) => {
@@ -218,17 +280,11 @@ export class Plugin {
           for (const node of mutation.addedNodes) {
             if (!(node instanceof iframeWindow.Element)) continue;
             const elem = node as Element;
-            this.log(
-              `MutationObserver node added: tag=${elem.tagName} classes="${elem.className}"`,
-            );
-            // React may add a wrapper (e.g. .toolbar-popup-overlay) containing
-            // the popup rather than the popup itself, so check descendants too.
             const popup = elem.classList.contains('appearance-popup')
               ? elem
               : elem.querySelector('.appearance-popup');
-            this.log(`  → popup found: ${!!popup}`);
-            if (popup && !popup.querySelector('[data-contrast-slider]')) {
-              popup.prepend(slider);
+            if (popup && !popup.querySelector(`[data-${groupDataAttr}]`)) {
+              popup.prepend(group);
             }
           }
         }
@@ -237,70 +293,7 @@ export class Plugin {
 
     observer.observe(observeRoot, { childList: true, subtree: false });
     this.#appearanceObservers.set(tabID, observer);
-    this.log(`observeAppearancePanel: observer active for tabID=${tabID}`);
-  }
-
-  createContrastSlider(
-    reader: _ZoteroTypes.ReaderInstance,
-    callback: (contrast: number) => void,
-  ): HTMLDivElement | null {
-    const doc = reader._iframeWindow?.document;
-    if (!doc) return null;
-
-    const group = doc.createElement('div');
-    group.className = 'group';
-    group.setAttribute('data-contrast-slider', '');
-
-    const row = doc.createElement('div');
-    row.className = 'row';
-
-    const label = doc.createElement('label');
-    label.setAttribute('for', 'contrast-slider');
-    label.textContent = 'Contrast';
-
-    const tickedRange = doc.createElement('div');
-    tickedRange.className = 'ticked-range-input';
-
-    const tickBar = doc.createElement('div');
-    tickBar.className = 'tick-bar';
-    for (const position of CONTRAST_TICKS) {
-      const tick = doc.createElement('div');
-      tick.className = 'tick';
-      tick.style.setProperty('--position', position);
-      tickBar.appendChild(tick);
-    }
-
-    const contrast = this.getContrast(reader);
-
-    const input = doc.createElement('input');
-    input.type = 'range';
-    input.id = 'contrast-slider';
-    input.min = String(CONTRAST_MIN);
-    input.max = String(CONTRAST_MAX);
-    input.step = String(CONTRAST_STEP);
-    input.value = String(contrast);
-    input.setAttribute('data-tabstop', '1');
-    input.setAttribute('tabindex', '-1');
-    input.style.cssText = 'position: relative; width: 100%;';
-
-    tickedRange.appendChild(tickBar);
-    tickedRange.appendChild(input);
-
-    const valueSpan = doc.createElement('span');
-    valueSpan.className = 'value';
-    valueSpan.textContent = `${contrast}%`;
-
-    input.addEventListener('input', () => {
-      const value = Number(input.value);
-      valueSpan.textContent = `${value}%`;
-      callback(value);
-    });
-
-    row.appendChild(label);
-    row.appendChild(tickedRange);
-    row.appendChild(valueSpan);
-    group.appendChild(row);
-    return group;
+    this.log(`addSliders: observer active for tabID=${tabID}`);
   }
 
   async styleExistingTabs() {
@@ -322,8 +315,3 @@ export class Plugin {
     Zotero.log(`[${config.addonName}] ${msg}`, type);
   }
 }
-
-const PREFS = {
-  defaultContrast: `${config.prefsPrefix}.default-contrast`,
-  contrastValues: `${config.prefsPrefix}.contrast-values`,
-} satisfies Record<string, string>;

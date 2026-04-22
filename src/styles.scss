@@ -1,3 +1,4 @@
 .canvasWrapper canvas {
-  filter: contrast(var(--pdf-contrast, 100%)) !important;
+  filter: brightness(var(--pdf-brightness, 100%))
+    contrast(var(--pdf-contrast, 100%)) !important;
 }
