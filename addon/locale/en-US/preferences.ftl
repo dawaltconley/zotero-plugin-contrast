@@ -1,2 +1,14 @@
-default-contrast = Default contrast (%)
-default-brightness = Default brightness (%)
+brightness-filter =
+    .label = Brightness
+contrast-filter =
+    .label = Contrast
+saturate-filter =
+    .label = Saturation
+grayscale-filter =
+    .label = Grayscale
+sepia-filter =
+    .label = Sepia
+hue-rotate-filter =
+    .label = Hue Rotate
+invert-filter =
+    .label = Invert

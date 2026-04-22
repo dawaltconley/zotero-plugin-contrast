@@ -3,5 +3,10 @@
 /* eslint-disable */
 // @ts-nocheck
 export type FluentMessageId =
-  | 'default-brightness'
-  | 'default-contrast';
+  | 'brightness-filter'
+  | 'contrast-filter'
+  | 'grayscale-filter'
+  | 'hue-rotate-filter'
+  | 'invert-filter'
+  | 'saturate-filter'
+  | 'sepia-filter';

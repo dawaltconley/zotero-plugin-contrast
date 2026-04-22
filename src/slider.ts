@@ -15,6 +15,7 @@ export interface SliderConfig {
   label: string;
   dataAttr: string;
   inputId: string;
+  unit?: string;
 }
 
 export function createSlider(
@@ -64,11 +65,11 @@ export function createSlider(
 
   const valueSpan = doc.createElement('span');
   valueSpan.className = 'value';
-  valueSpan.textContent = `${initialValue}%`;
+  valueSpan.textContent = `${initialValue}${config.unit ?? ''}`;
 
   input.addEventListener('input', () => {
     const value = Number(input.value);
-    valueSpan.textContent = `${value}%`;
+    valueSpan.textContent = `${value}${config.unit ?? ''}`;
     callback(value);
   });
 

@@ -4,12 +4,12 @@
   </linkset>
   <groupbox>
     <hbox align="center">
-      <html:label
-        for="__addonRef___default-brightness"
-        data-l10n-id="default-brightness"
-      ></html:label>
+      <checkbox
+        id="__addonRef___enabled-brightness"
+        preference="__prefsPrefix__.enabled-brightness"
+        data-l10n-id="brightness-filter"
+      />
       <html:input
-        id="__addonRef___default-brightness"
         type="number"
         min="50"
         max="150"
@@ -19,17 +19,92 @@
       />
     </hbox>
     <hbox align="center">
-      <html:label
-        for="__addonRef___default-contrast"
-        data-l10n-id="default-contrast"
-      ></html:label>
+      <checkbox
+        id="__addonRef___enabled-contrast"
+        preference="__prefsPrefix__.enabled-contrast"
+        data-l10n-id="contrast-filter"
+      />
       <html:input
-        id="__addonRef___default-contrast"
         type="number"
         min="80"
         max="360"
         step="10"
         preference="__prefsPrefix__.default-contrast"
+        style="width: 5em; margin-inline-start: 8px"
+      />
+    </hbox>
+    <hbox align="center">
+      <checkbox
+        id="__addonRef___enabled-saturate"
+        preference="__prefsPrefix__.enabled-saturate"
+        data-l10n-id="saturate-filter"
+      />
+      <html:input
+        type="number"
+        min="0"
+        max="200"
+        step="10"
+        preference="__prefsPrefix__.default-saturate"
+        style="width: 5em; margin-inline-start: 8px"
+      />
+    </hbox>
+    <hbox align="center">
+      <checkbox
+        id="__addonRef___enabled-grayscale"
+        preference="__prefsPrefix__.enabled-grayscale"
+        data-l10n-id="grayscale-filter"
+      />
+      <html:input
+        type="number"
+        min="0"
+        max="100"
+        step="5"
+        preference="__prefsPrefix__.default-grayscale"
+        style="width: 5em; margin-inline-start: 8px"
+      />
+    </hbox>
+    <hbox align="center">
+      <checkbox
+        id="__addonRef___enabled-sepia"
+        preference="__prefsPrefix__.enabled-sepia"
+        data-l10n-id="sepia-filter"
+      />
+      <html:input
+        type="number"
+        min="0"
+        max="100"
+        step="5"
+        preference="__prefsPrefix__.default-sepia"
+        style="width: 5em; margin-inline-start: 8px"
+      />
+    </hbox>
+    <hbox align="center">
+      <checkbox
+        id="__addonRef___enabled-hue-rotate"
+        preference="__prefsPrefix__.enabled-hue-rotate"
+        data-l10n-id="hue-rotate-filter"
+      />
+      <html:input
+        type="number"
+        min="0"
+        max="360"
+        step="15"
+        preference="__prefsPrefix__.default-hue-rotate"
+        style="width: 5em; margin-inline-start: 8px"
+      />
+    </hbox>
+    <hbox align="center">
+      <checkbox
+        id="__addonRef___enabled-invert"
+        preference="__prefsPrefix__.enabled-invert"
+        data-l10n-id="invert-filter"
+      />
+      <html:input
+        type="number"
+        min="0"
+        max="100"
+        step="5"
+        preference="__prefsPrefix__.default-invert"
         style="width: 5em; margin-inline-start: 8px"
       />
     </hbox>

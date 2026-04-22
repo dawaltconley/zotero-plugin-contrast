@@ -1,4 +1,6 @@
 .canvasWrapper canvas {
-  filter: brightness(var(--pdf-brightness, 100%))
-    contrast(var(--pdf-contrast, 100%)) !important;
+  filter: grayscale(var(--pdf-grayscale, 0%))
+    brightness(var(--pdf-brightness, 100%)) contrast(var(--pdf-contrast, 100%))
+    saturate(var(--pdf-saturate, 100%)) sepia(var(--pdf-sepia, 0%))
+    hue-rotate(var(--pdf-hue-rotate, 0deg)) invert(var(--pdf-invert, 0%)) !important;
 }
