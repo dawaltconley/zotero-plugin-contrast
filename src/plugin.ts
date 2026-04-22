@@ -1,32 +1,8 @@
 import pluginCss from './styles.scss';
 import { createSlider, createSliderGroup, type SliderConfig } from './slider';
 import { isPDFReader, waitForReader, waitForInternalReader } from './utils';
+import { FILTERS, getFilter, filterPref, type FilterID } from './filters';
 import { config, version as packageVersion } from '../package.json';
-
-const CONTRAST_CONFIG: SliderConfig = {
-  min: 80,
-  max: 360,
-  step: 10,
-  label: 'Contrast',
-  dataAttr: 'contrast-slider',
-  inputId: 'contrast-slider',
-};
-
-const BRIGHTNESS_CONFIG: SliderConfig = {
-  min: 50,
-  max: 150,
-  step: 5,
-  label: 'Brightness',
-  dataAttr: 'brightness-slider',
-  inputId: 'brightness-slider',
-};
-
-const PREFS = {
-  defaultContrast: `${config.prefsPrefix}.default-contrast`,
-  defaultBrightness: `${config.prefsPrefix}.default-brightness`,
-  contrastValues: `${config.prefsPrefix}.contrast-values`,
-  brightnessValues: `${config.prefsPrefix}.brightness-values`,
-} satisfies Record<string, string>;
 
 export interface PluginOptions {
   id: string;
@@ -41,58 +17,51 @@ export class Plugin {
   readonly version: string;
   readonly rootURI: string;
 
-  #contrastValues: Map<string, number> = new Map();
-  #brightnessValues: Map<string, number> = new Map();
-  #defaultContrast: number = 100;
-  #defaultBrightness: number = 100;
+  // filterId -> (itemKey -> value)
+  #filterValues: Map<FilterID, Map<string, number>> = new Map();
+  // filterId -> default value
+  #defaultValues: Map<FilterID, number> = new Map();
   #appearanceObservers = new Map<string, MutationObserver>();
 
-  getContrast(reader: _ZoteroTypes.ReaderInstance): number {
-    return this.#contrastValues.get(reader._item.key) ?? this.#defaultContrast;
-  }
-
-  setContrast(reader: _ZoteroTypes.ReaderInstance, contrast: number): void {
-    const key = reader._item.key;
-    if (contrast === this.#defaultContrast) {
-      this.#contrastValues.delete(key);
-    } else {
-      this.#contrastValues.set(key, contrast);
-    }
-  }
-
-  getBrightness(reader: _ZoteroTypes.ReaderInstance): number {
+  getFilterValue(
+    reader: _ZoteroTypes.ReaderInstance,
+    filterId: FilterID,
+  ): number {
+    const enabledValue = this.isFilterEnabled(filterId)
+      ? this.#filterValues.get(filterId)?.get(reader._item.key)
+      : undefined;
     return (
-      this.#brightnessValues.get(reader._item.key) ?? this.#defaultBrightness
+      enabledValue ??
+      this.#defaultValues.get(filterId) ??
+      getFilter(filterId).neutral
     );
   }
 
-  setBrightness(reader: _ZoteroTypes.ReaderInstance, brightness: number): void {
-    const key = reader._item.key;
-    if (brightness === this.#defaultBrightness) {
-      this.#brightnessValues.delete(key);
+  setFilterValue(
+    reader: _ZoteroTypes.ReaderInstance,
+    filterId: FilterID,
+    value: number,
+  ): void {
+    const defaultVal =
+      this.#defaultValues.get(filterId) ?? getFilter(filterId).neutral;
+    const itemKey = reader._item.key;
+    let filterValues = this.#filterValues.get(filterId);
+    if (!filterValues) {
+      filterValues = new Map();
+      this.#filterValues.set(filterId, filterValues);
+    }
+    if (value === defaultVal) {
+      filterValues.delete(itemKey);
     } else {
-      this.#brightnessValues.set(key, brightness);
+      filterValues.set(itemKey, value);
     }
   }
 
-  getDefaultContrast(): number | null {
-    const contrast = Number(Zotero.Prefs.get(PREFS.defaultContrast, true));
-    return Number.isNaN(contrast) ? null : contrast;
-  }
-
-  setDefaultContrast(contrast: number): void {
-    Zotero.Prefs.set(PREFS.defaultContrast, contrast, true);
-    this.#defaultContrast = contrast;
-  }
-
-  getDefaultBrightness(): number | null {
-    const brightness = Number(Zotero.Prefs.get(PREFS.defaultBrightness, true));
-    return Number.isNaN(brightness) ? null : brightness;
-  }
-
-  setDefaultBrightness(brightness: number): void {
-    Zotero.Prefs.set(PREFS.defaultBrightness, brightness, true);
-    this.#defaultBrightness = brightness;
+  isFilterEnabled(filterId: FilterID): boolean {
+    const pref = Zotero.Prefs.get(filterPref(filterId, 'enabled'), true);
+    return typeof pref === 'boolean'
+      ? pref
+      : getFilter(filterId).enabledByDefault;
   }
 
   getSavedValues(prefsKey: string): Map<string, number> | null {
@@ -110,17 +79,14 @@ export class Plugin {
     return null;
   }
 
-  setSavedValues(prefsKey: string, values: Map<string, number>): void {
-    Zotero.Prefs.set(
-      prefsKey,
-      JSON.stringify(Object.fromEntries(values)),
-      true,
-    );
-  }
-
   saveFilterValues(): void {
-    this.setSavedValues(PREFS.brightnessValues, this.#brightnessValues);
-    this.setSavedValues(PREFS.contrastValues, this.#contrastValues);
+    for (const filter of FILTERS) {
+      const values = this.#filterValues.get(filter.id);
+      if (values) {
+        const serialized = JSON.stringify(Object.fromEntries(values));
+        Zotero.Prefs.set(filterPref(filter.id, 'values'), serialized);
+      }
+    }
   }
 
   constructor({
@@ -138,12 +104,15 @@ export class Plugin {
   #toolbarEventHandler?: _ZoteroTypes.Reader.EventHandler<'renderToolbar'>;
 
   async startup(): Promise<void> {
-    this.#defaultContrast = this.getDefaultContrast() ?? 100;
-    this.#defaultBrightness = this.getDefaultBrightness() ?? 100;
-    this.#contrastValues =
-      this.getSavedValues(PREFS.contrastValues) ?? new Map();
-    this.#brightnessValues =
-      this.getSavedValues(PREFS.brightnessValues) ?? new Map();
+    for (const filter of FILTERS) {
+      const raw = Zotero.Prefs.get(filterPref(filter.id, 'default'), true);
+      this.#defaultValues.set(
+        filter.id,
+        typeof raw === 'number' ? raw : filter.neutral,
+      );
+      const saved = this.getSavedValues(filterPref(filter.id, 'values'));
+      this.#filterValues.set(filter.id, saved ?? new Map());
+    }
     this.#registerToolbarListener();
     await this.styleExistingTabs();
   }
@@ -193,9 +162,6 @@ export class Plugin {
   }
 
   applyFilters(reader: _ZoteroTypes.ReaderInstance<'pdf'>): void {
-    const contrast = this.getContrast(reader);
-    const brightness = this.getBrightness(reader);
-
     const pdfDoc: Document | undefined =
       reader._internalReader._primaryView._iframeWindow?.document;
     if (!pdfDoc || !pdfDoc.documentElement) {
@@ -206,10 +172,15 @@ export class Plugin {
     const root = (pdfDoc.documentElement as HTMLElement | null) || pdfDoc.body;
     if (!root) return;
 
-    if (contrast === 100 && brightness === 100) {
+    const allNeutral = FILTERS.every(
+      (f) => this.getFilterValue(reader, f.id) === f.neutral,
+    );
+
+    if (allNeutral) {
       pdfDoc.getElementById(this.stylesId)?.remove();
-      root.style.removeProperty('--pdf-contrast');
-      root.style.removeProperty('--pdf-brightness');
+      for (const filter of FILTERS) {
+        root.style.removeProperty(filter.cssVar);
+      }
     } else {
       if (!pdfDoc.getElementById(this.stylesId)) {
         const styles = pdfDoc.createElement('style');
@@ -217,15 +188,13 @@ export class Plugin {
         styles.innerText = pluginCss;
         pdfDoc.documentElement.appendChild(styles);
       }
-      if (contrast !== 100) {
-        root.style.setProperty('--pdf-contrast', `${contrast}%`);
-      } else {
-        root.style.removeProperty('--pdf-contrast');
-      }
-      if (brightness !== 100) {
-        root.style.setProperty('--pdf-brightness', `${brightness}%`);
-      } else {
-        root.style.removeProperty('--pdf-brightness');
+      for (const filter of FILTERS) {
+        const value = this.getFilterValue(reader, filter.id);
+        if (value !== filter.neutral) {
+          root.style.setProperty(filter.cssVar, `${value}${filter.unit}`);
+        } else {
+          root.style.removeProperty(filter.cssVar);
+        }
       }
     }
   }
@@ -256,26 +225,26 @@ export class Plugin {
       }
 
       const group = createSliderGroup(doc, groupDataAttr);
-      const brightnessSlider = createSlider(
-        doc,
-        this.getBrightness(reader),
-        (brightness) => {
-          this.setBrightness(reader, brightness);
-          this.applyFilters(reader);
-        },
-        BRIGHTNESS_CONFIG,
-      );
-      const contrastSlider = createSlider(
-        doc,
-        this.getContrast(reader),
-        (contrast) => {
-          this.setContrast(reader, contrast);
-          this.applyFilters(reader);
-        },
-        CONTRAST_CONFIG,
-      );
-      group.appendChild(brightnessSlider);
-      group.appendChild(contrastSlider);
+      for (const filter of FILTERS.filter((f) => this.isFilterEnabled(f.id))) {
+        const sliderConfig: SliderConfig = {
+          ...filter.slider,
+          dataAttr: `${filter.id}-slider`,
+          inputId: `${filter.id}-slider`,
+          unit: filter.unit,
+        };
+        group.appendChild(
+          createSlider(
+            doc,
+            this.getFilterValue(reader, filter.id),
+            (value) => {
+              this.setFilterValue(reader, filter.id, value);
+              this.applyFilters(reader);
+            },
+            sliderConfig,
+          ),
+        );
+      }
+
       appearancePanel.prepend(group);
     };
 

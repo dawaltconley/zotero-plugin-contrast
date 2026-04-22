@@ -7,10 +7,27 @@
 declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
-      "default-contrast": number;
+      "enabled-brightness": boolean;
+      "enabled-contrast": boolean;
+      "enabled-saturate": boolean;
+      "enabled-grayscale": boolean;
+      "enabled-sepia": boolean;
+      "enabled-hue-rotate": boolean;
+      "enabled-invert": boolean;
       "default-brightness": number;
-      "contrast-values": string;
+      "default-contrast": number;
+      "default-saturate": number;
+      "default-grayscale": number;
+      "default-sepia": number;
+      "default-hue-rotate": number;
+      "default-invert": number;
       "brightness-values": string;
+      "contrast-values": string;
+      "saturate-values": string;
+      "grayscale-values": string;
+      "sepia-values": string;
+      "hue-rotate-values": string;
+      "invert-values": string;
     };
   }
 }
