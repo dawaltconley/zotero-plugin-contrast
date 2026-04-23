@@ -3,6 +3,7 @@ import { createSlider, createSliderGroup, type SliderConfig } from './slider';
 import { isPDFReader, waitForReader, waitForInternalReader } from './utils';
 import { FILTERS, getFilter, filterPref, type FilterID } from './filters';
 import { config, version as packageVersion } from '../package.json';
+import debounce from 'lodash.debounce';
 
 export interface PluginOptions {
   id: string;
@@ -105,16 +106,40 @@ export class Plugin {
 
   async startup(): Promise<void> {
     for (const filter of FILTERS) {
-      const raw = Zotero.Prefs.get(filterPref(filter.id, 'default'), true);
+      const pref = filterPref(filter.id, 'default');
+
+      // get default values from prefs
+      const raw = Zotero.Prefs.get(pref, true);
       this.#defaultValues.set(
         filter.id,
         typeof raw === 'number' ? raw : filter.neutral,
       );
+
+      // get saved per-document values
       const saved = this.getSavedValues(filterPref(filter.id, 'values'));
       this.#filterValues.set(filter.id, saved ?? new Map());
+
+      // watch for changes to defaults and update accordingly
+      Zotero.Prefs.registerObserver(
+        pref,
+        async (updated: unknown) => {
+          if (typeof updated === 'number') {
+            this.#defaultValues.set(filter.id, updated);
+            await debouncedStyleExistingTabs();
+          } else {
+            Zotero.Prefs.set(pref, filter.neutral, true);
+          }
+        },
+        true,
+      );
     }
+
     this.#registerToolbarListener();
     await this.styleExistingTabs();
+    const debouncedStyleExistingTabs = debounce(
+      this.styleExistingTabs.bind(this),
+      1000,
+    );
   }
 
   shutdown(): void {
