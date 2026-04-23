@@ -2,7 +2,6 @@ import pluginCss from './styles.scss';
 import { createSlider, createSliderGroup, type SliderConfig } from './slider';
 import { isPDFReader, waitForReader, waitForInternalReader } from './utils';
 import { config, version as packageVersion } from '../package.json';
-import debounce from 'lodash.debounce';
 
 const CONTRAST_CONFIG: SliderConfig = {
   min: 80,
@@ -119,7 +118,10 @@ export class Plugin {
     );
   }
 
-  #pendingSaves: (() => void)[] = [];
+  saveFilterValues(): void {
+    this.setSavedValues(PREFS.brightnessValues, this.#brightnessValues);
+    this.setSavedValues(PREFS.contrastValues, this.#contrastValues);
+  }
 
   constructor({
     id = config.addonID,
@@ -147,7 +149,7 @@ export class Plugin {
   }
 
   shutdown(): void {
-    this.#pendingSaves.forEach((flush) => flush());
+    this.saveFilterValues();
     this.#unregisterToolbarListener();
     for (const observer of this.#appearanceObservers.values()) {
       observer.disconnect();
@@ -246,58 +248,55 @@ export class Plugin {
       return;
     }
 
-    const DEBOUNCE_TIMEOUT = 4000;
-    const saveBrightness = debounce(
-      this.setSavedValues.bind(this, PREFS.brightnessValues),
-      DEBOUNCE_TIMEOUT,
-    );
-    const saveContrast = debounce(
-      this.setSavedValues.bind(this, PREFS.contrastValues),
-      DEBOUNCE_TIMEOUT,
-    );
-    this.#pendingSaves.push(
-      () => saveBrightness.flush(),
-      () => saveContrast.flush(),
-    );
+    const onOpenAppearancePanel = (appearancePanel: AppearancePanel): void => {
+      this.log('opened appearance panel');
+      const groupDataAttr = 'pdf-sliders';
+      if (appearancePanel.querySelector(`[data-${groupDataAttr}]`)) {
+        return;
+      }
 
-    const brightnessSlider = createSlider(
-      doc,
-      this.getBrightness(reader),
-      (brightness) => {
-        this.setBrightness(reader, brightness);
-        this.applyFilters(reader);
-        saveBrightness(this.#brightnessValues);
-      },
-      BRIGHTNESS_CONFIG,
-    );
+      const group = createSliderGroup(doc, groupDataAttr);
+      const brightnessSlider = createSlider(
+        doc,
+        this.getBrightness(reader),
+        (brightness) => {
+          this.setBrightness(reader, brightness);
+          this.applyFilters(reader);
+        },
+        BRIGHTNESS_CONFIG,
+      );
+      const contrastSlider = createSlider(
+        doc,
+        this.getContrast(reader),
+        (contrast) => {
+          this.setContrast(reader, contrast);
+          this.applyFilters(reader);
+        },
+        CONTRAST_CONFIG,
+      );
+      group.appendChild(brightnessSlider);
+      group.appendChild(contrastSlider);
+      appearancePanel.prepend(group);
+    };
 
-    const contrastSlider = createSlider(
-      doc,
-      this.getContrast(reader),
-      (contrast) => {
-        this.setContrast(reader, contrast);
-        this.applyFilters(reader);
-        saveContrast(this.#contrastValues);
-      },
-      CONTRAST_CONFIG,
-    );
-
-    const groupDataAttr = 'pdf-sliders';
-    const group = createSliderGroup(doc, groupDataAttr);
-    group.appendChild(brightnessSlider);
-    group.appendChild(contrastSlider);
+    const onCloseAppearancePanel = (): void => {
+      this.log('closed appearance panel');
+      this.saveFilterValues();
+    };
 
     const observer = new iframeWindow.MutationObserver(
       (mutations: MutationRecord[]) => {
         for (const mutation of mutations) {
+          for (const node of mutation.removedNodes) {
+            const popup = getAppearancePanel(node);
+            if (popup) {
+              onCloseAppearancePanel();
+            }
+          }
           for (const node of mutation.addedNodes) {
-            if (!(node instanceof iframeWindow.Element)) continue;
-            const elem = node as Element;
-            const popup = elem.classList.contains('appearance-popup')
-              ? elem
-              : elem.querySelector('.appearance-popup');
-            if (popup && !popup.querySelector(`[data-${groupDataAttr}]`)) {
-              popup.prepend(group);
+            const popup = getAppearancePanel(node);
+            if (popup) {
+              onOpenAppearancePanel(popup);
             }
           }
         }
@@ -327,4 +326,14 @@ export class Plugin {
   ) {
     Zotero.log(`[${config.addonName}] ${msg}`, type);
   }
+}
+
+type AppearancePanel = Element;
+
+function getAppearancePanel(node: Node | null): AppearancePanel | null {
+  if (node?.nodeType !== 1) return null;
+  const elem = node as Element;
+  return elem.classList.contains('appearance-popup')
+    ? elem
+    : elem.querySelector('.appearance-popup');
 }
